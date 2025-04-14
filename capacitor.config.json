@@ -1,0 +1,10 @@
+
+{
+  "appId": "app.lovable.taskflow",
+  "appName": "TaskFlow AI",
+  "server": {
+    "url": "",
+    "cleartext": true
+  },
+  "plugins": {}
+}
