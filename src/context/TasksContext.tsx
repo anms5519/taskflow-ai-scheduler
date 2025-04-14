@@ -2,9 +2,19 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase client
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Initialize Supabase client with fallbacks for development
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://your-supabase-url.supabase.co';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-supabase-anon-key';
+
+// Check if we have the required values
+if (!supabaseUrl || supabaseUrl === 'https://your-supabase-url.supabase.co') {
+  console.error('Missing VITE_SUPABASE_URL environment variable');
+}
+
+if (!supabaseKey || supabaseKey === 'your-supabase-anon-key') {
+  console.error('Missing VITE_SUPABASE_ANON_KEY environment variable');
+}
+
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
 export interface Task {
