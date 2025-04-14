@@ -1,5 +1,11 @@
 
-import React, { createContext, useState, useContext, ReactNode } from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase client
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const supabase = createClient(supabaseUrl, supabaseKey);
 
 export interface Task {
   id: string;
@@ -8,37 +14,108 @@ export interface Task {
   priority: 'low' | 'medium' | 'high';
   dueDate?: Date;
   completed: boolean;
+  user_id?: string;
 }
 
 interface TasksContextType {
   tasks: Task[];
-  addTask: (task: Omit<Task, 'id'>) => void;
-  updateTask: (id: string, updatedTask: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
+  loading: boolean;
+  addTask: (task: Omit<Task, 'id'>) => Promise<void>;
+  updateTask: (id: string, updatedTask: Partial<Task>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
 }
 
 const TasksContext = createContext<TasksContextType | undefined>(undefined);
 
 export const TasksProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const addTask = (task: Omit<Task, 'id'>) => {
-    const newTask = { ...task, id: Date.now().toString() };
-    setTasks([...tasks, newTask]);
+  useEffect(() => {
+    fetchTasks();
+    
+    // Subscribe to task changes
+    const tasksSubscription = supabase
+      .channel('tasks-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, (payload) => {
+        fetchTasks();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(tasksSubscription);
+    };
+  }, []);
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    
+    const { data: session } = await supabase.auth.getSession();
+    const userId = session?.session?.user?.id;
+    
+    if (userId) {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('user_id', userId);
+      
+      if (error) {
+        console.error('Error fetching tasks:', error);
+      } else {
+        setTasks(data || []);
+      }
+    }
+    
+    setLoading(false);
   };
 
-  const updateTask = (id: string, updatedTask: Partial<Task>) => {
-    setTasks(tasks.map(task => 
-      task.id === id ? { ...task, ...updatedTask } : task
-    ));
+  const addTask = async (task: Omit<Task, 'id'>) => {
+    const { data: session } = await supabase.auth.getSession();
+    const userId = session?.session?.user?.id;
+    
+    if (!userId) {
+      return;
+    }
+    
+    const { error } = await supabase
+      .from('tasks')
+      .insert([{ ...task, user_id: userId }]);
+    
+    if (error) {
+      console.error('Error adding task:', error);
+    } else {
+      await fetchTasks();
+    }
   };
 
-  const deleteTask = (id: string) => {
-    setTasks(tasks.filter(task => task.id !== id));
+  const updateTask = async (id: string, updatedTask: Partial<Task>) => {
+    const { error } = await supabase
+      .from('tasks')
+      .update(updatedTask)
+      .eq('id', id);
+    
+    if (error) {
+      console.error('Error updating task:', error);
+    } else {
+      await fetchTasks();
+    }
+  };
+
+  const deleteTask = async (id: string) => {
+    const { error } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', id);
+    
+    if (error) {
+      console.error('Error deleting task:', error);
+    } else {
+      await fetchTasks();
+    }
   };
 
   return (
-    <TasksContext.Provider value={{ tasks, addTask, updateTask, deleteTask }}>
+    <TasksContext.Provider value={{ tasks, loading, addTask, updateTask, deleteTask }}>
       {children}
     </TasksContext.Provider>
   );
